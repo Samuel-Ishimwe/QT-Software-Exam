@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.log
+.env
+qa_report.json
+GIS_Engineer_Practical_Assessment_*.docx
