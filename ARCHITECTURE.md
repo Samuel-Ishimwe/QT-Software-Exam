@@ -57,5 +57,5 @@ This implementation (schema, migrations, NestJS API, subdivision rule engine, lo
 
 - Bonus tasks not attempted (Parts A and B prioritized per the brief's own guidance).
 - Merge (as opposed to subdivision) is schema-ready (`parcel_lineage.relation_type = 'MERGE'`) but has no endpoint — out of scope for Task 3.
-- The viewer has no styling beyond function (per the brief's stated grading preference) and no offline basemap.
+- The viewer has no styling beyond function (per the brief's stated grading preference) and no offline basemap — the "osm" basemap requires internet access to fetch tiles; parcel data itself still loads entirely from the local API either way.
 - Production auth/authorization on `/admin/config` and the officer-facing endpoints is explicitly out of scope per Section 7 of the brief.

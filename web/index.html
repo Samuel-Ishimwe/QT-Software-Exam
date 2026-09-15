@@ -36,6 +36,16 @@
   </div>
   <div id="viewDiv"></div>
 
+  <script>
+    window.addEventListener('error', (e) => {
+      const el = document.getElementById('status');
+      if (el) el.textContent = 'JS error: ' + (e.error ? (e.error.stack || e.message) : e.message);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      const el = document.getElementById('status');
+      if (el) el.textContent = 'Unhandled rejection: ' + (e.reason && e.reason.stack ? e.reason.stack : e.reason);
+    });
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
