@@ -210,4 +210,4 @@ Full request bodies for both are in the git history of this README's authoring s
 
 ## AI tool disclosure
 
-Built with Claude Code (Anthropic) — schema, migrations, the NestJS API, the subdivision rule engine, load/reconciliation/load-test scripts, the viewer, and both Part B documents. I reviewed the code and rationale throughout and can explain and modify every part of it, per the brief's condition for AI tool use.
+Every task in this assessment was answered with the help of **Claude Code** (Anthropic), running on the **Claude Sonnet 5** model — schema, migrations, the NestJS API, the subdivision rule engine, load/reconciliation/load-test scripts, the viewer, both bonus tasks, the Swagger/OpenAPI documentation, the required screen recording, and both Part B documents. I reviewed the code and rationale throughout and can explain and modify every part of it, per the brief's condition for AI tool use.
