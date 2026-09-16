@@ -1,4 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Param, Patch } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { pool } from '../db/pool';
 import { ConfigService } from './config.service';
 
@@ -8,10 +9,12 @@ import { ConfigService } from './config.service';
  * in production this would sit behind the same admin auth as the rest of the
  * back office, not open on the public network.
  */
+@ApiTags('config')
 @Controller('admin/config')
 export class ConfigController {
   constructor(private readonly config: ConfigService) {}
 
+  @ApiOperation({ summary: 'Every current tolerance/threshold (subdivision, QA, boundary-edit)' })
   @Get()
   async getAll() {
     const { rows } = await pool.query(
@@ -20,6 +23,8 @@ export class ConfigController {
     return rows;
   }
 
+  @ApiOperation({ summary: 'Change one tolerance value — takes effect on the very next request, no release needed' })
+  @ApiParam({ name: 'key', example: 'subdivision.min_plot_size_m2' })
   @Patch(':key')
   async update(@Param('key') key: string, @Body('value') value: number) {
     const { rows } = await pool.query(

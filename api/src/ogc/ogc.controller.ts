@@ -1,4 +1,5 @@
 import { BadRequestException, Controller, Get, Header, NotFoundException, Param, Query, Req } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { OgcService } from './ogc.service';
 import { parseOptionalBbox } from '../common/bbox';
@@ -27,10 +28,12 @@ const NATIVE_CRS = 'http://www.opengis.net/def/crs/EPSG/0/32736';
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 1000;
 
+@ApiTags('ogc')
 @Controller('ogc')
 export class OgcController {
   constructor(private readonly ogc: OgcService) {}
 
+  @ApiOperation({ summary: 'OGC API - Features landing page' })
   @Get()
   landingPage(@Req() req: Request) {
     const base = baseUrl(req);
@@ -46,11 +49,13 @@ export class OgcController {
     };
   }
 
+  @ApiOperation({ summary: 'Conformance classes this server implements (Core + GeoJSON; see class doc-comment for what\'s skipped)' })
   @Get('conformance')
   conformance() {
     return { conformsTo: CONFORMANCE_CLASSES };
   }
 
+  @ApiOperation({ summary: 'List of feature collections (just "parcels")' })
   @Get('collections')
   async collections(@Req() req: Request) {
     return {
@@ -59,12 +64,19 @@ export class OgcController {
     };
   }
 
+  @ApiOperation({ summary: 'Collection metadata — extent, CRS, links' })
+  @ApiParam({ name: 'collectionId', example: 'parcels' })
   @Get('collections/:collectionId')
   async collection(@Param('collectionId') collectionId: string, @Req() req: Request) {
     assertCollection(collectionId);
     return this.collectionMeta(req);
   }
 
+  @ApiOperation({ summary: 'Paged GeoJSON FeatureCollection, optionally filtered by bbox' })
+  @ApiParam({ name: 'collectionId', example: 'parcels' })
+  @ApiQuery({ name: 'bbox', required: false, example: '500000,9780000,500100,9780100' })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'offset', required: false, example: 0 })
   @Get('collections/:collectionId/items')
   @Header('Content-Type', 'application/geo+json')
   async items(
@@ -104,6 +116,9 @@ export class OgcController {
     };
   }
 
+  @ApiOperation({ summary: 'Single GeoJSON Feature by feature id (the parcel UPI)' })
+  @ApiParam({ name: 'collectionId', example: 'parcels' })
+  @ApiParam({ name: 'featureId', example: '1/1/1/1500' })
   @Get('collections/:collectionId/items/:featureId')
   @Header('Content-Type', 'application/geo+json')
   async item(

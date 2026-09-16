@@ -13,7 +13,7 @@ docker compose exec api npm run load
 
 That's it — one `docker compose up` plus the one documented command above. `docker compose up` starts:
 - **db** — PostGIS, auto-seeded on first boot from `db/init/001_seed.sql` (Appendix A, verbatim) via Postgres's own `docker-entrypoint-initdb.d` mechanism, and auto-migrated to the target schema on API container start (`npm run migrate` runs automatically before `npm run start` inside the `api` container's `CMD`).
-- **api** — NestJS service on `http://localhost:3000`.
+- **api** — NestJS service on `http://localhost:3000`, with interactive Swagger UI at `http://localhost:3000/docs` (see "API documentation" below).
 - **web** — the map viewer on `http://localhost:8080`.
 
 `npm run load` (the one extra command) runs the ETL from the legacy `source_parcel` extract into the target schema, with quarantine. It takes ~20-25s on the full 301,600-row seed. Re-running it against an already-loaded database is not idempotent by design — it's a one-time legacy migration, not a sync job — so if you need a clean re-run, `docker compose down -v && docker compose up -d --build` first.
@@ -25,6 +25,19 @@ That's it — one `docker compose up` plus the one documented command above. `do
 - `GET /qa/report`, `GET /admin/config` — inspect data quality and current tolerances directly.
 - `GET /ogc` — OGC API – Features endpoint over the public parcel layer (bonus (a), see below).
 - `POST /cases/boundary-edit` — concurrent-conflict-checked single-parcel geometry edit (bonus (c), see below).
+
+## API documentation (Swagger / OpenAPI)
+
+Interactive docs are served directly by the API, generated from the same DTOs and controllers that run in production (not a hand-maintained spec that can drift out of sync):
+
+- **`GET /docs`** — Swagger UI. Every endpoint grouped by tag (`parcels`, `subdivision`, `boundary-edit`, `qa`, `config`, `ogc`), with request/response schemas, example values, and a working "Try it out" that calls the live API straight from the browser.
+- **`GET /docs-json`** — the raw OpenAPI 3 document, e.g. for importing into Postman/Insomnia.
+
+Wired up in [api/src/main.ts](api/src/main.ts) via `@nestjs/swagger`'s `DocumentBuilder`/`SwaggerModule`; per-endpoint detail comes from `@ApiOperation`/`@ApiResponse`/`@ApiParam`/`@ApiQuery` decorators on each controller and `@ApiProperty` on each request DTO (`subdivision-request.dto.ts`, `boundary-edit-request.dto.ts`) — added explicitly rather than relying on the `@nestjs/swagger` CLI plugin's automatic class-validator inference, since this project builds with plain `tsc`/`ts-node` (see `package.json`), not the Nest CLI the plugin hooks into.
+
+All 15 routes across every module are covered: the officer/citizen parcel queries, the subdivision rule engine, the boundary-edit conflict endpoint (bonus (c)), the QA report, the tolerance config (including the `PATCH /admin/config/{key}` write endpoint, not otherwise documented elsewhere in this README), and the full OGC API – Features surface (bonus (a)).
+
+**Demo**: [demo/api-docs-demo.mp4](demo/api-docs-demo.mp4), ~30s — same automated-capture approach as the Section 8 recording (Puppeteer against the live stack, on-screen captions, no audio). Shows the tag-grouped endpoint list, then two live "Try it out" calls executed straight from the Swagger UI against the running API (`GET /parcels/{upi}` and `GET /admin/config`, both real responses), then the auto-generated request-body example for `POST /cases/subdivision`. This is a separate recording from Section 8's required one, kept out of it deliberately so that required deliverable stays exactly scoped to what the brief asked for.
 
 ## Testing the API
 
@@ -79,6 +92,7 @@ Subdivision requests (success and both rejection cases) are covered below under 
 | `web/` | ArcGIS Maps SDK JS viewer (plain HTML/JS, no build step) |
 | `db/init/001_seed.sql` | Appendix A, verbatim |
 | `demo/subdivision-demo.mp4` | Section 8 — required screen recording |
+| `demo/api-docs-demo.mp4` | API documentation demo — Swagger UI / OpenAPI |
 
 ## Bonus tasks
 
