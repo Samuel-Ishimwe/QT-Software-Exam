@@ -23,6 +23,37 @@ That's it — one `docker compose up` plus the one documented command above. `do
 - `npm test` — runs the subdivision rule-engine integration tests (real Postgres, not mocks) — Appendix B's success case plus two rejection scenarios. Requires an already-loaded, freshly-seeded database (the success test consumes parcel `1/1/1/1000`).
 - `npm run loadtest` — the latency harness behind `PERFORMANCE.md`.
 - `GET /qa/report`, `GET /admin/config` — inspect data quality and current tolerances directly.
+- `GET /ogc` — OGC API – Features endpoint over the public parcel layer (bonus task (a), see below).
+
+## Testing the API
+
+**Automated** — `docker compose exec api npm test` runs [api/test/subdivision.integration.test.ts](api/test/subdivision.integration.test.ts), the only test suite in the repo. It's an integration test against the real Postgres/PostGIS instance (not mocked — the rules are expressed as `ST_*` functions, so mocking would test nothing), covering the subdivision rule engine directly via `SubdivisionService`:
+1. Appendix B's success request against `1/1/1/1000` — asserts it retires and produces 3 children.
+2. A gap-left rejection against a random clean `ACTIVE` parcel — asserts a `full_coverage` violation and that the parent is left untouched.
+3. A below-minimum-plot-size rejection against another random clean parcel — asserts a `min_plot_size` violation.
+
+Test 1 is one-shot: it hardcodes `1/1/1/1000` and isn't idempotent, so it only passes against a freshly loaded database. Tests 2 and 3 pick a random parcel each run and self-heal. If `1/1/1/1000` has already been subdivided (e.g. from clicking through the viewer, or a prior manual test), reseed first: `docker compose down -v && docker compose up -d --build && docker compose exec api npm run load`.
+
+The test suite only covers the subdivision rule engine — it does not exercise the HTTP layer (controllers, DTO validation, routing) or the `/parcels`, `/qa/report`, `/admin/config` endpoints. Those are verified manually, via curl:
+
+```bash
+# Parcels in a bbox (GeoJSON FeatureCollection)
+curl "http://localhost:3000/parcels?bbox=500000,9780000,500100,9780100"
+
+# Single parcel by UPI, including current holders
+curl "http://localhost:3000/parcels/1%2F1%2F1%2F1000"
+
+# Lineage (ancestors/descendants) for a parcel
+curl "http://localhost:3000/parcels/1%2F1%2F1%2F1000/history"
+
+# Data quality report
+curl "http://localhost:3000/qa/report"
+
+# Current tolerance configuration
+curl "http://localhost:3000/admin/config"
+```
+
+Subdivision requests (success and both rejection cases) are covered below under "Subdivision demo requests" — those curl bodies double as manual API tests and were re-run against the live stack to confirm the documented behaviour still holds.
 
 ## What's where
 
@@ -34,8 +65,35 @@ That's it — one `docker compose up` plus the one documented command above. `do
 | `ARCHITECTURE-HYBRID.md` | Task 6 |
 | `INTEGRATION-FEASIBILITY.md` | Task 7 |
 | `api/` | NestJS service, migrations, load/reconcile/loadtest scripts, tests |
+| `api/src/ogc/` | Optional bonus (a) — OGC API – Features endpoint |
 | `web/` | ArcGIS Maps SDK JS viewer (plain HTML/JS, no build step) |
 | `db/init/001_seed.sql` | Appendix A, verbatim |
+
+## Bonus task — OGC API – Features (choice (a))
+
+The brief allows at most one optional bonus. Chosen: **(a) OGC API – Features endpoint serving the public parcel layer.** Implementation is [api/src/ogc/](api/src/ogc/), mounted at `/ogc`, and reuses `public_parcel_view` — the same field-masked view behind `GET /public/parcels` — so Task 2's masking applies here too; this bonus is purely about standards conformance on top of it, not privacy.
+
+**Conformance classes implemented:**
+- `.../conf/core` — landing page, conformance declaration, collections, collection metadata, items (with `bbox`/`limit`/`offset` and pagination `next` links), single item by feature id.
+- `.../conf/geojson` — all feature representations are GeoJSON, served as `application/geo+json`.
+
+**Conformance classes deliberately skipped:**
+- **OpenAPI 3.0 (`oas30`)** — no generated OpenAPI document; would need a spec generator wired into the build, out of scope for a capped bonus.
+- **HTML** — no server-rendered representation. The project already ships a dedicated map viewer (`web/`) as the human-facing UI; a redundant HTML view of the same JSON adds nothing.
+- **CRS (Part 2 extension)** — no reprojection support. `bbox` and returned geometries stay in the parcel table's native EPSG:32736, consistent with this project's existing "the API never reprojects" stance (see the CRS note in `ARCHITECTURE.md`). This is a **known deviation** from Core's implicit WGS84/CRS84 assumption for GeoJSON, recorded here rather than silently left unaddressed — a production implementation serving external OGC clients would need the CRS extension to offer WGS84 as an alternative.
+
+**Endpoints:**
+```bash
+curl http://localhost:3000/ogc                                       # landing page
+curl http://localhost:3000/ogc/conformance                           # conformance classes
+curl http://localhost:3000/ogc/collections                           # collection list
+curl http://localhost:3000/ogc/collections/parcels                   # collection metadata + extent
+curl "http://localhost:3000/ogc/collections/parcels/items?limit=5"   # paged FeatureCollection
+curl "http://localhost:3000/ogc/collections/parcels/items?bbox=500000,9780000,500100,9780100"
+curl "http://localhost:3000/ogc/collections/parcels/items/1%2F1%2F1%2F1500"  # single feature by UPI
+```
+
+All six were curl-tested against the live stack: `numberMatched`/`numberReturned`/`next` links behave correctly across pages, `bbox` filtering matches the existing `/parcels` semantics, unknown collection ids and unknown feature ids both 404, and an out-of-range `limit` 400s.
 
 ## Assumptions (recorded, not silently resolved)
 
@@ -51,7 +109,7 @@ See the inline comments directly above each `CREATE INDEX` in `api/migrations/00
 
 ## What I didn't finish / would do next
 
-- The optional bonus tasks were not attempted — Parts A and B were prioritized per the brief's own explicit guidance ("do not cut Part B").
+- One bonus task attempted, as allowed ("choose at most one"): OGC API – Features, see "Bonus task" above. The other three (vector tiles, concurrent-edit conflict detection, tamper-evident audit log) were not attempted — Parts A and B were prioritized per the brief's own explicit guidance ("do not cut Part B").
 - Merge is schema-ready (`parcel_lineage.relation_type = 'MERGE'`) but has no endpoint (only subdivision was required).
 - No auth on `/admin/config` or the officer-facing endpoints — explicitly out of scope per the brief's Section 7.
 - The viewer uses the ArcGIS "osm" basemap (OpenStreetMap tiles via Esri's basemap styles service — the one basemap ID that doesn't require an ArcGIS API key). Parcel data stays in its native SRID (EPSG:32736) end to end — the API never reprojects — and is reprojected into the basemap's Web Mercator on the client via `esri/geometry/projection`, a local (no geometry-service round trip) projected-to-projected conversion since both are WGS84-based. Functionally complete (pan/zoom/identify/search/lineage) and otherwise unstyled, per the brief's own stated grading preference ("an unstyled map that works beats a beautiful one that fetches 300,000 features"). Verified with a real headless browser (Edge via Puppeteer) rendering against the live stack, not just curl against the API — screenshots on request.
