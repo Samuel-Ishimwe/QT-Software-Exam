@@ -43,7 +43,7 @@ export class ParcelsService {
     const { rows } = await pool.query(
       `
       SELECT p.id, p.upi, p.status, p.district_code, p.sector_code, p.cell_code, p.land_use,
-             p.area_computed, p.declared_area, p.valid_from, p.valid_to, p.source_src_id,
+             p.area_computed, p.declared_area, p.valid_from, p.valid_to, p.source_src_id, p.version,
              ST_AsGeoJSON(p.geom)::json AS geometry,
              COALESCE(
                jsonb_agg(jsonb_build_object('party_name', party.name, 'right_type', lr.right_type, 'status', lr.status))
@@ -76,6 +76,7 @@ export class ParcelsService {
         valid_from: r.valid_from,
         valid_to: r.valid_to,
         source_src_id: r.source_src_id,
+        version: r.version,
         holders: r.holders,
       },
     };
