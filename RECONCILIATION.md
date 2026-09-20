@@ -29,7 +29,7 @@ Tolerance: **0 rows** — every source row must land in exactly one of `parcel` 
 `source_parcel.upi` has no NULL values in this dataset, so every source row participates in the UPI set comparison below.
 
 **Source − Target** (UPIs that exist in the legacy extract but never reached `parcel`): **400 distinct UPIs**.
-Explanation: this is expected to equal the number of *distinct* UPIs whose *every* occurrence was quarantined — in this dataset, the ~400 self-intersecting "bowtie" rows (`unrepairable_invalid_geometry`), each of which has a UPI unique to itself, so all of them disappear from the target UPI set. UPIs affected only by `duplicate_upi` quarantine are **not** in this set, because the earliest occurrence under that UPI is still loaded.
+Explanation: this is expected to equal the number of *distinct* UPIs whose *every* occurrence was quarantined — in this dataset, the ~400 self-intersecting "bowtie" rows (`invalid_geometry`), each of which has a UPI unique to itself, so all of them disappear from the target UPI set. UPIs affected only by `duplicate_upi` quarantine are **not** in this set, because the earliest occurrence under that UPI is still loaded.
 
 First 10 examples: 8/8/8/8001, 8/8/8/8002, 8/8/8/8003, 8/8/8/8004, 8/8/8/8005, 8/8/8/8006, 8/8/8/8007, 8/8/8/8008, 8/8/8/8009, 8/8/8/8010
 
@@ -41,7 +41,7 @@ Explanation: expected to be exactly 0 for a pure legacy load — every loaded UP
 | Rule violated | Count |
 |---|---|
 | duplicate_upi | 60 |
-| unrepairable_invalid_geometry | 400 |
+| invalid_geometry | 400 |
 
 Sample quarantined records (first 12, ordered by rule):
 

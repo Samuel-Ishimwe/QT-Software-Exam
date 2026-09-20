@@ -1,19 +1,14 @@
 import { pool } from '../db/pool';
+import { classifyAndQuarantine } from './quarantine';
 
 /**
  * ETL from the legacy `source_parcel` extract into the target LADM-mapped
  * schema. Runs as one transaction: either the whole batch lands or none of
  * it does (mirrors the atomicity we require of the subdivision transaction).
  *
- * Quarantine policy (see ARCHITECTURE.md for the full rationale):
- *   - missing_geometry        : geom IS NULL
- *   - unrepairable_invalid_geometry : ST_MakeValid does not yield a clean
- *     single Polygon (this is what happens to the seeded self-intersecting
- *     "bowtie" rows -- they repair into a MultiPolygon, which the target
- *     `geometry(Polygon,...)` column cannot hold)
- *   - missing_upi             : upi IS NULL
- *   - duplicate_upi           : upi already used by an earlier (lower
- *     src_id) row; the earlier row is kept, the rest are quarantined
+ * Quarantine policy (rules live in quarantine.ts, rationale in ARCHITECTURE.md):
+ * a row that violates a constraint is quarantined with a reason -- never
+ * dropped, never coerced (geometry is not repaired).
  *
  * Overlaps, slivers and area mismatches are NOT quarantined here -- they are
  * legitimate (if messy) parcels and are surfaced by GET /qa/report instead,
@@ -46,78 +41,8 @@ async function main() {
       [caseId],
     );
 
-    console.log('classifying source rows (geometry repair attempt + validity)...');
-    await client.query(`
-      CREATE TEMP TABLE geo_checked AS
-      WITH base AS (
-        SELECT s.*,
-          (CASE WHEN s.geom IS NOT NULL AND NOT ST_IsValid(s.geom)
-                THEN ST_MakeValid(s.geom) ELSE s.geom END) AS repaired_geom
-        FROM source_parcel s
-      )
-      SELECT *,
-        (CASE
-           WHEN geom IS NULL THEN 'MISSING'
-           WHEN repaired_geom IS NULL OR ST_IsEmpty(repaired_geom)
-                OR GeometryType(repaired_geom) <> 'POLYGON'
-                OR NOT ST_IsValid(repaired_geom) THEN 'UNREPAIRABLE'
-           ELSE 'OK'
-         END) AS geom_status
-      FROM base
-    `);
-
-    console.log('quarantining missing geometry...');
-    await client.query(`
-      INSERT INTO quarantine_record (source_src_id, upi_attempted, rule_violated, detail, raw_attributes, raw_geom_wkt)
-      SELECT src_id, upi, 'missing_geometry', 'geom column was NULL in source_parcel',
-             jsonb_build_object('district_code', district_code, 'sector_code', sector_code,
-                                 'cell_code', cell_code, 'land_use', land_use,
-                                 'declared_area', declared_area, 'holder_name', holder_name),
-             NULL
-      FROM geo_checked WHERE geom_status = 'MISSING'
-    `);
-
-    console.log('quarantining unrepairable invalid geometry...');
-    await client.query(`
-      INSERT INTO quarantine_record (source_src_id, upi_attempted, rule_violated, detail, raw_attributes, raw_geom_wkt)
-      SELECT src_id, upi, 'unrepairable_invalid_geometry',
-             'ST_MakeValid produced ' || COALESCE(GeometryType(repaired_geom), 'NULL') ||
-             ' instead of a single valid Polygon',
-             jsonb_build_object('district_code', district_code, 'sector_code', sector_code,
-                                 'cell_code', cell_code, 'land_use', land_use,
-                                 'declared_area', declared_area, 'holder_name', holder_name),
-             ST_AsText(geom)
-      FROM geo_checked WHERE geom_status = 'UNREPAIRABLE'
-    `);
-
-    console.log('quarantining missing upi...');
-    await client.query(`
-      INSERT INTO quarantine_record (source_src_id, upi_attempted, rule_violated, detail, raw_attributes, raw_geom_wkt)
-      SELECT src_id, upi, 'missing_upi', 'upi column was NULL in source_parcel',
-             jsonb_build_object('district_code', district_code, 'sector_code', sector_code,
-                                 'cell_code', cell_code, 'land_use', land_use,
-                                 'declared_area', declared_area, 'holder_name', holder_name),
-             ST_AsText(repaired_geom)
-      FROM geo_checked WHERE geom_status = 'OK' AND upi IS NULL
-    `);
-
-    console.log('quarantining duplicate upis (keeping earliest src_id)...');
-    await client.query(`
-      WITH dup AS (
-        SELECT upi, MIN(src_id) AS keep_id
-        FROM geo_checked
-        WHERE geom_status = 'OK' AND upi IS NOT NULL
-        GROUP BY upi HAVING COUNT(*) > 1
-      )
-      INSERT INTO quarantine_record (source_src_id, upi_attempted, rule_violated, detail, raw_attributes, raw_geom_wkt)
-      SELECT g.src_id, g.upi, 'duplicate_upi', 'upi already assigned to src_id ' || d.keep_id,
-             jsonb_build_object('district_code', g.district_code, 'sector_code', g.sector_code,
-                                 'cell_code', g.cell_code, 'land_use', g.land_use,
-                                 'declared_area', g.declared_area, 'holder_name', g.holder_name),
-             ST_AsText(g.repaired_geom)
-      FROM geo_checked g JOIN dup d ON g.upi = d.upi AND g.src_id <> d.keep_id
-      WHERE g.geom_status = 'OK'
-    `);
+    console.log('classifying source rows and quarantining violations...');
+    await classifyAndQuarantine(client);
 
     const { rows: qCountRows } = await client.query('SELECT count(*)::bigint AS n FROM quarantine_record');
     console.log(`quarantined so far: ${qCountRows[0].n}`);
@@ -143,7 +68,7 @@ async function main() {
       INSERT INTO parcel (upi, status, ba_unit_id, district_code, sector_code, cell_code,
                            land_use, geom, area_computed, declared_area, source_src_id, valid_from)
       SELECT upi, 'ACTIVE', ba_unit_id_planned, district_code, sector_code, cell_code,
-             land_use, repaired_geom, ST_Area(repaired_geom), declared_area, src_id,
+             land_use, geom, ST_Area(geom), declared_area, src_id,
              COALESCE(registered_on::timestamptz, now())
       FROM final_load
     `);

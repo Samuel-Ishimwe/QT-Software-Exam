@@ -116,7 +116,7 @@ async function main() {
     );
     lines.push('');
     lines.push(`**Source − Target** (UPIs that exist in the legacy extract but never reached \`parcel\`): **${upiSourceMinusTarget.rows.length} distinct UPIs**.`);
-    lines.push('Explanation: this is expected to equal the number of *distinct* UPIs whose *every* occurrence was quarantined — in this dataset, the ~400 self-intersecting "bowtie" rows (`unrepairable_invalid_geometry`), each of which has a UPI unique to itself, so all of them disappear from the target UPI set. UPIs affected only by `duplicate_upi` quarantine are **not** in this set, because the earliest occurrence under that UPI is still loaded.');
+    lines.push('Explanation: this is expected to equal the number of *distinct* UPIs whose *every* occurrence was quarantined — in this dataset, the ~400 self-intersecting "bowtie" rows (`invalid_geometry`), each of which has a UPI unique to itself, so all of them disappear from the target UPI set. UPIs affected only by `duplicate_upi` quarantine are **not** in this set, because the earliest occurrence under that UPI is still loaded.');
     if (upiSourceMinusTarget.rows.length) {
       lines.push('');
       lines.push('First 10 examples: ' + upiSourceMinusTarget.rows.slice(0, 10).map((r) => r.upi).join(', '));

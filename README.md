@@ -174,6 +174,12 @@ curl -X POST http://localhost:3000/cases/boundary-edit -H "Content-Type: applica
 - **Sliver/overlap/area-mismatch defects are not load-blocking** (see `ARCHITECTURE.md`) — they load as legitimate parcels and are surfaced by `GET /qa/report` instead, since Task 4 requires reporting on exactly those categories over the loaded data.
 - **Subdivision child UPI scheme**: `{parent_upi}-{n}`. Any real scheme would follow the land authority's numbering convention, which isn't specified here.
 
+## Quarantine: the exception path
+
+A source row that violates a constraint is written to `quarantine_record` with the rule, a human-readable reason (`detail`), the original attributes and the raw geometry — never silently dropped, never silently coerced (geometry is **not** repaired; see `ARCHITECTURE.md`). Rules, in [api/src/scripts/quarantine.ts](api/src/scripts/quarantine.ts): `missing_geometry`, `invalid_geometry` (empty or fails `ST_IsValid`; detail is `ST_IsValidReason`), `missing_upi`, `duplicate_upi` (earliest `src_id` kept). The load is one transaction and reconciles exactly (`RECONCILIATION.md`: 301,600 source = 301,140 loaded + 460 quarantined: 400 `invalid_geometry` + 60 `duplicate_upi`).
+
+The seed only contains two of the four violation kinds, so [api/test/quarantine.integration.test.ts](api/test/quarantine.integration.test.ts) feeds one synthetic bad row per rule through the real classifier (in a rolled-back transaction) and asserts each is quarantined with a reason, that a geometry `ST_MakeValid` *could* have silently fixed is quarantined rather than repaired, and that quarantined + loadable = every source row. To inspect it live: `SELECT rule_violated, detail, count(*) FROM quarantine_record GROUP BY 1, 2 ORDER BY 3 DESC;`
+
 ## Index justifications
 
 Every index created by the migrations, defended in one line (all in `api/migrations/001_create_schema.sql`; `003_boundary_edit.sql` adds a column and a config row but no index):
