@@ -176,7 +176,22 @@ curl -X POST http://localhost:3000/cases/boundary-edit -H "Content-Type: applica
 
 ## Index justifications
 
-See the inline comments directly above each `CREATE INDEX` in `api/migrations/001_create_schema.sql`; summarized in `ARCHITECTURE.md` under "Index justifications."
+Every index created by the migrations, defended in one line (all in `api/migrations/001_create_schema.sql`; `003_boundary_edit.sql` adds a column and a config row but no index):
+
+| Index | One-line defence |
+|---|---|
+| `parcel_upi_uidx` (unique btree, `parcel.upi`) | Every read starts from a UPI (`/parcels/{upi}`, subdivision's parent lookup) and UPIs must be unique forever, so one global unique index is both the constraint and the hottest lookup path. |
+| `parcel_geom_gist_active` (partial GiST, `geom WHERE status='ACTIVE'`) | Backs viewport bbox queries, subdivision/boundary-edit neighbour checks and the QA overlap self-join (63.7 ms → 0.7 ms on bbox; the overlap join doesn't finish without it, see `PERFORMANCE.md`), and stays small because retired history is excluded. |
+| `parcel_status_idx` (btree, `status`) | Serves status-only filters and counts (active vs retired) without touching the larger spatial index. |
+| `parcel_admin_unit_idx` (btree, `district_code, sector_code, cell_code`) | Backs the reconciliation "counts by administrative unit" rollup and any per-district report. |
+| `parcel_ba_unit_idx` (btree, `ba_unit_id`) | Indexes the foreign key so the parcel ↔ legal-object join (holder lookup in `/parcels/{upi}`) and FK checks don't scan the table. |
+| `land_right_ba_unit_idx` (btree, `land_right.ba_unit_id`) | The holder join in `GET /parcels/{upi}` goes BA unit → active rights, so it needs this side indexed. |
+| `land_right_party_idx` (btree, `land_right.party_id`) | Supports the reverse "everything this party holds" lookup and FK checks against `party`. |
+| `lineage_parent_idx` (btree, `parcel_lineage.parent_parcel_id`) | Each hop of the descendants walk in `/parcels/{upi}/history` joins on the parent, so without it the recursive CTE seq-scans per hop. |
+| `lineage_child_idx` (btree, `parcel_lineage.child_parcel_id`) | Same for the ancestors walk, which joins on the child. |
+| `audit_entity_idx` (btree, `audit_event.entity_type, entity_id`) | Fetches the full audit trail for one entity (e.g. a parcel UPI). No endpoint reads it yet, so this is a forward-looking index, kept because audit tables only grow and are queried per entity. |
+
+Also index-backed by constraints rather than explicit `CREATE INDEX`: `UNIQUE (parent_parcel_id, child_parcel_id)` on `parcel_lineage` (prevents duplicate lineage edges), `UNIQUE (name)` on `party` (the dedup key for the load's upsert), and `UNIQUE (case_reference)` on `case_record` (a repeated case reference fails cleanly).
 
 ## What I didn't finish / would do next
 
