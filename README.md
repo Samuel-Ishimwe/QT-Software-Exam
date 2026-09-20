@@ -16,7 +16,7 @@ That's it — one `docker compose up` plus the one documented command above. `do
 - **api** — NestJS service on `http://localhost:3000`, with interactive Swagger UI at `http://localhost:3000/docs` (see "API documentation" below).
 - **web** — the map viewer on `http://localhost:8080`.
 
-`npm run load` (the one extra command) runs the ETL from the legacy `source_parcel` extract into the target schema, with quarantine. It takes ~20-25s on the full 301,600-row seed. Re-running it against an already-loaded database is not idempotent by design — it's a one-time legacy migration, not a sync job — so if you need a clean re-run, `docker compose down -v && docker compose up -d --build` first.
+`npm run load` (the one extra command) runs the ETL from the legacy `source_parcel` extract into the target schema, with quarantine. It takes ~13.5s (median of three runs, range 12.5–14.2s; per-stage breakdown in `DATA-MODEL.md`) on the full 301,600-row seed. Re-running it against an already-loaded database is not idempotent by design — it's a one-time legacy migration, not a sync job — so if you need a clean re-run, `docker compose down -v && docker compose up -d --build` first.
 
 **Useful follow-up commands** (all via `docker compose exec api ...`, or from the host with `PGHOST=localhost PGPORT=55432` etc. exported):
 - `npm run reconcile > ../RECONCILIATION.md` — regenerates the reconciliation report from live data (this is exactly how the committed `RECONCILIATION.md` was produced).
@@ -83,6 +83,7 @@ Subdivision requests (success and both rejection cases) are covered below under 
 |---|---|
 | `ARCHITECTURE.md` | Task 1–5 design decisions, CRS note, LADM mapping table, index justifications |
 | `RECONCILIATION.md` | Task 1 — load correctness proof |
+| `DATA-MODEL.md` | Task 1 — ERD and load timings |
 | `PERFORMANCE.md` | Task 5 — EXPLAIN ANALYZE, latency percentiles, scale discussion |
 | `ARCHITECTURE-HYBRID.md` | Task 6 |
 | `INTEGRATION-FEASIBILITY.md` | Task 7 |

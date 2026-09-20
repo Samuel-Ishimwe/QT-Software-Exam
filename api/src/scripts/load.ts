@@ -20,6 +20,13 @@ const CASE_REFERENCE = `LEGACY-IMPORT-${new Date().toISOString().slice(0, 19).re
 async function main() {
   const client = await pool.connect();
   const startedAt = Date.now();
+  const stages: [string, number][] = [];
+  let lastLap = startedAt;
+  const lap = (name: string) => {
+    const now = Date.now();
+    stages.push([name, now - lastLap]);
+    lastLap = now;
+  };
   try {
     await client.query('BEGIN');
 
@@ -41,8 +48,10 @@ async function main() {
       [caseId],
     );
 
+    lap('setup (case + source record)');
     console.log('classifying source rows and quarantining violations...');
     await classifyAndQuarantine(client);
+    lap('classify + quarantine');
 
     const { rows: qCountRows } = await client.query('SELECT count(*)::bigint AS n FROM quarantine_record');
     console.log(`quarantined so far: ${qCountRows[0].n}`);
@@ -55,6 +64,7 @@ async function main() {
       WHERE g.geom_status = 'OK' AND g.upi IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM quarantine_record q WHERE q.source_src_id = g.src_id)
     `);
+    lap('build final load set');
 
     console.log('inserting basic_administrative_unit rows...');
     await client.query(`
@@ -62,6 +72,7 @@ async function main() {
       SELECT ba_unit_id_planned, 'PARCEL_UNIT', 'ACTIVE' FROM final_load
     `);
     await client.query(`SELECT setval('basic_administrative_unit_id_seq', (SELECT max(ba_unit_id_planned) FROM final_load))`);
+    lap('insert basic_administrative_unit');
 
     console.log('inserting parcel rows...');
     await client.query(`
@@ -72,6 +83,7 @@ async function main() {
              COALESCE(registered_on::timestamptz, now())
       FROM final_load
     `);
+    lap('insert parcel (geometry + GiST/btree index maintenance)');
 
     console.log('inserting party rows (deduplicated by holder name)...');
     await client.query(`
@@ -80,6 +92,7 @@ async function main() {
       FROM final_load WHERE holder_name IS NOT NULL
       ON CONFLICT (name) DO NOTHING
     `);
+    lap('insert party (dedup by name)');
 
     console.log('inserting land_right rows...');
     await client.query(`
@@ -88,6 +101,7 @@ async function main() {
       FROM final_load f JOIN party p ON p.name = f.holder_name
       WHERE f.holder_name IS NOT NULL
     `);
+    lap('insert land_right');
 
     const { rows: loadedRows } = await client.query('SELECT count(*)::bigint AS n FROM final_load');
     const { rows: finalQRows } = await client.query('SELECT count(*)::bigint AS n FROM quarantine_record');
@@ -109,7 +123,9 @@ async function main() {
       [caseId],
     );
 
+    lap('audit + case close');
     await client.query('COMMIT');
+    lap('commit');
 
     const elapsedMs = Date.now() - startedAt;
     console.log('--- load complete ---');
@@ -117,6 +133,8 @@ async function main() {
     console.log(`loaded parcels    : ${loadedCount}`);
     console.log(`quarantined       : ${quarantinedCount}`);
     console.log(`elapsed           : ${elapsedMs} ms`);
+    console.log('--- stage timings ---');
+    for (const [name, ms] of stages) console.log(`${name.padEnd(56)} ${String(ms).padStart(7)} ms`);
     console.log(`case_reference    : ${CASE_REFERENCE}`);
   } catch (err) {
     await client.query('ROLLBACK');
