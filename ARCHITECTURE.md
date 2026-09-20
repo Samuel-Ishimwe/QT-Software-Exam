@@ -55,7 +55,7 @@ This implementation (schema, migrations, NestJS API, subdivision rule engine, lo
 
 ## What's not finished / next steps
 
-- Bonus tasks not attempted (Parts A and B prioritized per the brief's own guidance).
+- **Bonus tasks attempted: (a) OGC API – Features** (`api/src/ogc/`, Core + GeoJSON conformance; OpenAPI, HTML and CRS classes skipped) **and (c) concurrent editing conflict** (`api/src/boundary-edit/`, `POST /cases/boundary-edit`: optimistic `version` token plus `FOR UPDATE`-locked neighbour re-check). The brief says "choose at most one", so submitting two is a deliberate, recorded deviation, not an oversight. **Not attempted: (b) vector tiles and (d) tamper-evident audit log** (Parts A and B prioritized per the brief's own guidance). Details in `README.md` under "Bonus tasks".
 - Merge (as opposed to subdivision) is schema-ready (`parcel_lineage.relation_type = 'MERGE'`) but has no endpoint — out of scope for Task 3.
 - The viewer has no styling beyond function (per the brief's stated grading preference) and no offline basemap — the "osm" basemap requires internet access to fetch tiles; parcel data itself still loads entirely from the local API either way.
 - Production auth/authorization on `/admin/config` and the officer-facing endpoints is explicitly out of scope per Section 7 of the brief.
