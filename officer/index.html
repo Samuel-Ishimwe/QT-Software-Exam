@@ -1,0 +1,150 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Land Registry Back Office</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.30/"></script>
+  <style>
+    :root {
+      --accent: #1f4e8c;
+      --accent-dark: #163a69;
+      --danger: #b3261e;
+      --danger-bg: #fdecea;
+      --ok: #1b6e3c;
+      --ok-bg: #e7f5ec;
+      --warn: #8a5a00;
+      --warn-bg: #fff4d6;
+      --line: #d5d9e0;
+    }
+    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; font-size: 13px; color: #1c2430; }
+    #viewDiv { position: absolute; top: 0; bottom: 0; left: 400px; right: 0; }
+    #panel { position: absolute; top: 0; bottom: 0; left: 0; width: 400px; overflow-y: auto; box-sizing: border-box; background: #f4f6f9; border-right: 1px solid var(--line); }
+    #banner { background: var(--accent); color: #fff; padding: 10px 12px; }
+    #banner h1 { font-size: 15px; margin: 0; }
+    #banner p { margin: 2px 0 0; font-size: 11px; opacity: .85; }
+    .section { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    .section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #4a5566; margin: 0 0 6px; }
+    label { display: block; margin-top: 6px; font-size: 12px; color: #4a5566; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: 5px 6px; border: 1px solid #b8bfcc; border-radius: 3px; font: inherit; }
+    .row { display: flex; gap: 6px; align-items: flex-end; }
+    .row > * { flex: 1; }
+    .row > button { flex: 0 0 auto; }
+    button { padding: 6px 10px; border: 1px solid #98a2b3; border-radius: 3px; background: #fff; font: inherit; cursor: pointer; }
+    button:hover:not(:disabled) { background: #eef2f8; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent-dark); color: #fff; }
+    button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+    .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    #tabs { display: flex; border-bottom: 1px solid var(--line); background: #e8ecf2; }
+    #tabs button { flex: 1; border: 0; border-radius: 0; background: transparent; padding: 9px; font-weight: 600; color: #4a5566; }
+    #tabs button.active { background: #f4f6f9; color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+    .tab { display: none; }
+    .tab.active { display: block; }
+    .hint { font-size: 12px; color: #4a5566; margin: 0 0 6px; line-height: 1.4; }
+    dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 12px; }
+    dl.kv dt { color: #6b7686; }
+    dl.kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+    ul.plain { list-style: none; margin: 6px 0 0; padding: 0; }
+    .child { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 3px; background: #fff; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+    .child .swatch { width: 12px; height: 12px; border-radius: 2px; flex: 0 0 auto; }
+    .child .area { margin-left: auto; }
+    .child.bad { border-color: var(--danger); background: var(--danger-bg); }
+    .child.warn { border-color: #d9a400; background: var(--warn-bg); }
+    .msg { padding: 8px 10px; border-radius: 3px; margin-top: 8px; font-size: 12px; line-height: 1.4; }
+    .msg.ok { background: var(--ok-bg); color: var(--ok); border: 1px solid #9fd3b3; }
+    .msg.err { background: var(--danger-bg); color: var(--danger); border: 1px solid #efb3ae; }
+    .msg.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid #ecd28a; }
+    .msg ul { margin: 6px 0 0; padding-left: 0; list-style: none; }
+    .msg li { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(0,0,0,.1); }
+    .rule { display: inline-block; font-family: ui-monospace, monospace; font-size: 11px; background: rgba(0,0,0,.08); padding: 0 5px; border-radius: 2px; margin-right: 4px; }
+    .measure { display: block; font-size: 11px; opacity: .85; margin-top: 2px; }
+    a.upi { color: var(--accent); cursor: pointer; text-decoration: underline; }
+    #status { padding: 8px 12px; font-family: ui-monospace, monospace; font-size: 11px; color: #4a5566; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <div id="banner">
+      <h1>Land Registry Back Office</h1>
+      <p>Internal — officers only. Changes made here are legal-record transactions. The public viewer is a separate app.</p>
+    </div>
+
+    <div class="section">
+      <h2>Officer</h2>
+      <input type="text" id="officerId" placeholder="officer id, e.g. officer-a" autocomplete="off" />
+    </div>
+
+    <div class="section">
+      <h2>Parcel</h2>
+      <div class="row">
+        <div>
+          <input type="text" id="upiInput" placeholder="search UPI, e.g. 1/1/1/1000" autocomplete="off" />
+        </div>
+        <button id="searchBtn">Find</button>
+      </div>
+      <p class="hint" style="margin-top:6px">…or click a parcel on the map.</p>
+      <div id="parcelCard"></div>
+    </div>
+
+    <div id="tabs">
+      <button id="tabSplit" class="active">Subdivide</button>
+      <button id="tabEdit">Edit boundary</button>
+    </div>
+
+    <div id="paneSplit" class="tab active section">
+      <p class="hint">Draw a cut line straight across the parcel. Cuts are computed in the parcel's own coordinate system, so the pieces tile the parent exactly. Cut again across any piece to keep splitting.</p>
+      <div class="btns" id="splitStartBtns">
+        <button id="splitStart" class="primary" disabled>Start subdivision of selected parcel</button>
+      </div>
+      <div id="splitWork" style="display:none">
+        <div class="btns">
+          <button id="drawCut" class="primary">Draw cut line</button>
+          <button id="undoCut" disabled>Undo last cut</button>
+          <button id="cancelSplit">Cancel</button>
+        </div>
+        <ul class="plain" id="childList"></ul>
+        <div id="splitTotals" class="hint" style="margin-top:6px"></div>
+        <label>Case reference <input type="text" id="splitCase" autocomplete="off" /></label>
+        <div class="btns">
+          <button id="submitSplit" class="primary" disabled>Submit subdivision</button>
+        </div>
+      </div>
+      <div id="splitResult"></div>
+    </div>
+
+    <div id="paneEdit" class="tab section">
+      <p class="hint">Drag vertices (or click an edge midpoint to add one) to correct the boundary. Vertices snap to neighbouring parcel boundaries. The dashed outline is the current registered boundary.</p>
+      <div class="btns">
+        <button id="editStart" class="primary" disabled>Edit boundary of selected parcel</button>
+      </div>
+      <div id="editWork" style="display:none">
+        <dl class="kv" id="editInfo"></dl>
+        <label>Case reference <input type="text" id="editCase" autocomplete="off" /></label>
+        <div class="btns">
+          <button id="submitEdit" class="primary">Submit edit</button>
+          <button id="resetEdit">Reset geometry</button>
+          <button id="cancelEdit">Cancel</button>
+        </div>
+      </div>
+      <div id="editResult"></div>
+    </div>
+
+    <div id="status">loading map...</div>
+  </div>
+  <div id="viewDiv"></div>
+
+  <script>
+    window.addEventListener('error', (e) => {
+      const el = document.getElementById('status');
+      if (el) el.textContent = 'JS error: ' + (e.error ? (e.error.stack || e.message) : e.message);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      const el = document.getElementById('status');
+      if (el) el.textContent = 'Unhandled rejection: ' + (e.reason && e.reason.stack ? e.reason.stack : e.reason);
+    });
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>

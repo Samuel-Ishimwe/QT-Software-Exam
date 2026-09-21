@@ -46,5 +46,15 @@ services:
     ports:
       - "8080:80"
 
+  officer:
+    build:
+      context: ./officer
+    container_name: parcel-officer
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8081:80"
+
 volumes:
   db_data:

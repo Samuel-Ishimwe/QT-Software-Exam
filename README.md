@@ -14,7 +14,8 @@ docker compose exec api npm run load
 That's it — one `docker compose up` plus the one documented command above. `docker compose up` starts:
 - **db** — PostGIS, auto-seeded on first boot from `db/init/001_seed.sql` (Appendix A, verbatim) via Postgres's own `docker-entrypoint-initdb.d` mechanism, and auto-migrated to the target schema on API container start (`npm run migrate` runs automatically before `npm run start` inside the `api` container's `CMD`).
 - **api** — NestJS service on `http://localhost:3000`, with interactive Swagger UI at `http://localhost:3000/docs` (see "API documentation" below).
-- **web** — the map viewer on `http://localhost:8080`.
+- **web** — the public map viewer on `http://localhost:8080`.
+- **officer** — the back-office editing UI (subdivision + boundary edit) on `http://localhost:8081`, a separate app from the public viewer (see "Back-office UI" below).
 
 `npm run load` (the one extra command) runs the ETL from the legacy `source_parcel` extract into the target schema, with quarantine. It takes ~13.5s (median of three runs, range 12.5–14.2s; per-stage breakdown in `DATA-MODEL.md`) on the full 301,600-row seed. Re-running it against an already-loaded database is not idempotent by design — it's a one-time legacy migration, not a sync job — so if you need a clean re-run, `docker compose down -v && docker compose up -d --build` first.
 
@@ -91,6 +92,7 @@ Subdivision requests (success and both rejection cases) are covered below under 
 | `api/src/ogc/` | Optional bonus (a) — OGC API – Features endpoint |
 | `api/src/boundary-edit/` | Optional bonus (c) — concurrent editing conflict |
 | `web/` | ArcGIS Maps SDK JS viewer (plain HTML/JS, no build step) |
+| `officer/` | Back-office editing UI for subdivision and boundary edit (same stack, own container) |
 | `db/init/001_seed.sql` | Appendix A, verbatim |
 | `demo/subdivision-demo.mp4` | Section 8 — required screen recording |
 | `demo/api-docs-demo.mp4` | API documentation demo — Swagger UI / OpenAPI |
@@ -166,6 +168,16 @@ curl -X POST http://localhost:3000/cases/boundary-edit -H "Content-Type: applica
 ```
 
 **Automated tests**: [api/test/boundary-edit.integration.test.ts](api/test/boundary-edit.integration.test.ts) (run via `docker compose exec api npm test`, same caveats as the subdivision suite — real Postgres, no mocks). Four tests, self-healing (pick a random parcel/adjacent pair each run, no hardcoded one-shot UPI): a successful edit; the same-row stale-version rejection; the sequential cross-row race above; and one that fires two edits at truly the same instant via `Promise.all` on two separate DB connections and asserts exactly one wins and the database is left with no overlapping geometry regardless of which one does — the real proof that the row-locking, not just the code review, holds under genuine concurrency.
+
+## Back-office UI (subdivision and boundary edit)
+
+[officer/](officer/) is a second, separate front end at `http://localhost:8081` for the two write operations: `POST /cases/subdivision` and `POST /cases/boundary-edit`. It is deliberately not part of the public viewer in [web/](web/): it has its own directory, Dockerfile and container, so it can be firewalled or put behind SSO independently, and the public app never ships write-capable code. **Auth is out of scope for this proof of concept** (as it is for the API itself); the officer id is a free-text field remembered in `localStorage` and sent as `officer_id`.
+
+**Subdivide.** Select a parcel (click it or search a UPI), *Start subdivision*, then *Draw cut line* straight across it (click points, double-click or Enter to finish). Cuts are computed client-side in the parcel's own EPSG:32736 (`geometryEngine.cut`), so the pieces tile the parent exactly with no gaps or overlaps by construction. Cut again across any piece to keep splitting; *Undo last cut* steps back. Each piece shows its area, flagged if under the live `subdivision.min_plot_size_m2`, plus the sum against the parent. *Submit* posts the pieces; a 422 lists every violation the rule engine found, and the offending pieces are outlined red on the map. The client-side check is advisory only; the server re-validates every rule.
+
+**Edit boundary.** *Edit boundary* re-reads the parcel (so the `base_version` is fresh), then lets the officer drag vertices or add them at edge midpoints, snapping to neighbouring parcel boundaries. The dashed outline is the registered boundary; the panel shows the live area delta. On a 409 (`stale_version`, `no_neighbour_overlap`, ...) nothing was written and the draft stays on the map: the officer can adjust it, or *Reload latest* to redraft against the current version.
+
+Limits: the cut tool only handles single-ring parcels (no holes) and rejects a cut that would make a multi-part piece; the basemap needs internet access; the overlap on the seed's known defects (e.g. `1/1/1/1002`'s corner against `9/9/9/10200`) surfaces exactly as the API reports it.
 
 ## Assumptions (recorded, not silently resolved)
 
